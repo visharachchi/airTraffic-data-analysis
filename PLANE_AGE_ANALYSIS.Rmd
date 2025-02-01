@@ -1,0 +1,208 @@
+---
+title: "DO OLDER PLANES SUFFER MORE DELAYS?"
+author: 'Vishma Arachchi'
+date: "2024-04-02"
+purpose: "To explore the relationship between plane age and corresponding delay times"
+output: html_document
+---
+
+
+
+LOADING LIBRARIES
+
+```{r}
+library(ggplot2)
+library(repr)
+library(tidyr)
+library(dplyr)
+library(reshape2)
+
+```
+
+Loading the datasets
+
+```{r}
+df_com <- read.csv('/Users/vishmaarachchi/Documents/BSC/Programming coursework - PROJECT/2006.csv.bz2')
+plane_df <- read.csv('/Users/vishmaarachchi/Documents/BSC/Programming coursework - PROJECT/plane-data.csv')
+
+```
+
+Replacing null values
+
+```{r}
+df_com[df_com == ""] <- NA
+plane_df[plane_df == ""] <- NA
+
+```
+
+Conversion to type numeric
+
+```{r}
+df_com$DepDelay <- as.numeric(df_com$DepDelay)
+df_com$ArrDelay <- as.numeric(df_com$ArrDelay)
+df_com$CRSDepTime <- as.character(df_com$CRSDepTime)
+
+```
+
+Calculating the mean of ArrDelayand DepDelay
+
+```{r}
+mean_ArrDelay <- mean(df_com$ArrDelay,na.rm = TRUE)
+mean_DepDelay <- mean(df_com$DepDelay,na.rm = TRUE)
+
+```
+
+Replacing NA values
+
+```{r}
+
+df_com$ArrDelay[is.na(df_com$ArrDelay)] <- round(mean_ArrDelay,1)
+df_com$DepDelay[is.na(df_com$DepDelay)] <- round(mean_DepDelay,1)
+
+```
+
+Removing rows of plane dataset with Year of Service commencement is 0 or NONE
+
+```{r}
+
+colnames(plane_df)[colnames(plane_df) == "year"] <- "Start_of_Service"
+colnames(plane_df)[colnames(plane_df) == "tailnum"] <- "TailNum"
+
+
+plane_df <- plane_df[complete.cases(plane_df$Start_of_Service), ]
+plane_df <- subset(plane_df, Start_of_Service != '0000')
+plane_df <- subset(plane_df, Start_of_Service != "None")
+
+plane_df$Start_of_Service = as.numeric(plane_df$Start_of_Service)
+
+```
+
+Calculating Correlation coeffitient between ArrDelay and DepDelay
+
+```{r}
+
+correlation_coefficient <- cor(df_com$ArrDelay, df_com$DepDelay)
+print(correlation_coefficient)
+
+```
+
+Creating a new column for total delays in combined dataframe
+
+```{r}
+df_com$Total_Delays <- df_com$ArrDelay + df_com$DepDelay
+
+```
+
+New dataframe with relevant columns
+
+```{r}
+df_com_1 <- select(df_com, Year, TailNum,Total_Delays )
+```
+
+Merging the two datasets and filtering
+
+```{r}
+merged_df <- merge.data.frame(df_com_1, plane_df, by = 'TailNum',all.x = TRUE)
+merged_df_2 <- select(merged_df, Year, TailNum,Start_of_Service,Total_Delays )
+
+```
+
+Dataframe with only datapoints where overall delay occurs
+
+```{r}
+df_only_delays <- subset(merged_df_2, Total_Delays > 0)
+
+```
+
+Removing Start of Service year = NA rows
+
+```{r}
+
+df_only_delays <- df_only_delays[complete.cases(df_only_delays$Start_of_Service), ]
+
+```
+
+Calculating the ages of each plane and removing all negative ages
+
+```{r}
+df_only_delays$Age <- df_only_delays$Year - df_only_delays$Start_of_Service
+df_only_delays <- subset(df_only_delays, Age != -1)
+
+
+```
+
+Drawing a scatter plot
+
+1)Formatting data for a scatter plot
+
+```{r}
+
+select_variable <- c("Total_Delays")
+
+df_only_delays_long <- melt(df_only_delays, id.vars = "Age", measure.vars = select_variable, value.name = "value")
+
+df_only_delays_wide <- df_only_delays_long %>%
+  group_by(Age, variable) %>%
+  summarise(value = mean(value, na.rm = TRUE)) %>%
+  spread(key = variable, value = value)
+
+
+```
+
+```{r}
+ggplot(df_only_delays_wide, aes(x = Age, y = Total_Delays)) +
+  geom_point() +  # 
+  geom_smooth(method = "lm", se = FALSE) + 
+  labs(title = "Scatterplot with Regression Line", x = "Age of Plane (Years)", y = "Average Delay (min)")
+
+
+```
+
+Correlation between ages and average delay
+
+```{r}
+print(cor(df_only_delays_wide$Age,df_only_delays_wide$Total_Delays))
+
+
+```
+
+Visualizing a boxplot with age groups as classes
+
+a)  Data preparation
+
+```{r}
+
+
+values_to_be_mapped_list <- list(c(0:11), c(12:21), c(22:31), c(32:41), c(42:51))
+replacement_value_list <- c('0-11', '12-21', '22-31', '32-41', '42-51')
+
+
+df_only_delays$Age_groups <- sapply(df_only_delays$Age, function(x) {
+  for (i in 1:length(values_to_be_mapped_list)) {
+    if (x %in% values_to_be_mapped_list[[i]]) {
+      return(replacement_value_list[i])
+    }
+  }
+})
+
+
+```
+
+b)Drawing the boxplot
+
+
+```{r}
+df_only_delays$Age_groups <- as.character(df_only_delays$Age_groups) # Convert factor to character
+df_only_delays$Age_groups[is.na(df_only_delays$Age_groups)] <- "Unknown"
+
+
+
+box_plot<-ggplot(df_only_delays, aes(x = Age_groups, y = Total_Delays, fill = Age_groups)) + ylim(c(0,300)) +
+  geom_boxplot(outlier.colour="black", outlier.shape=NA, outlier.size=0) + stat_summary(fun = "mean", geom = "point", shape = 8,
+                                                                                        size = 2, color = "white")+
+  labs(x = "Age Groups", y = "Average Delay")
+
+box_plot
+```
+
+
