@@ -1,0 +1,200 @@
+---
+title: "What are the best times and days of the week to minimise delays each year?"
+author: 'Vishma Arachchi'
+date: "2024-02-05"
+output: html_document
+---
+
+What are the best times and days of the week to minimise delays each year?
+
+
+
+LOADING LIBRARIES
+
+```{r}
+
+library(ggplot2)
+library(repr)
+library(tidyr)
+library(dplyr)
+library(reshape2)
+
+
+```
+
+LOADING DATASET
+
+```{r}
+df_a <- read.csv('/Users/vishmaarachchi/Documents/BSC/Programming coursework - PROJECT/2006.csv.bz2')
+
+```
+
+Checking for missing values and empty strings
+
+```{r}
+df_a[df_a == ""] <- NA
+
+missing_values <- colSums(is.na(df_a))
+print(missing_values)
+
+```
+
+Conversion of columns to type numeric
+
+
+```{r}
+df_a$DepDelay <- as.numeric(df_a$DepDelay)
+df_a$ArrDelay <- as.numeric(df_a$ArrDelay)
+df_a$CRSDepTime <- as.character(df_a$CRSDepTime)
+```
+
+
+
+Calculating the mean of ArrDelay and DepDelay
+
+
+```{r}
+mean_ArrDelay <- mean(df_a$ArrDelay,na.rm = TRUE)
+mean_DepDelay <- mean(df_a$DepDelay,na.rm = TRUE)
+```
+
+Replacing NA values
+
+
+```{r}
+
+df_a$ArrDelay[is.na(df_a$ArrDelay)] <- round(mean_ArrDelay,1)
+df_a$DepDelay[is.na(df_a$DepDelay)] <- round(mean_DepDelay,1)
+
+```
+
+Finding the correlation between arrival delays and departure delays()
+
+```{r}
+correlation_coefficient <- cor(df_a$ArrDelay, df_a$DepDelay)
+print(correlation_coefficient)
+```
+
+This is a very high value suggesting that a combined column is appropriate
+
+
+New dataframe for relevant columns
+
+```{r}
+df_main <- select(df_a,DayOfWeek, CRSDepTime, ArrDelay, DepDelay )
+
+```
+
+Creating new column for Total Delays
+
+
+```{r}
+df_main$Total_Delays <- df_main$ArrDelay + df_main$DepDelay
+
+```
+
+Creating Dataframe where only datapoints with delays are included
+
+
+```{r}
+df_only_delays <- subset(df_main, Total_Delays > 0)
+
+```
+
+Adding leading zeros to the CRSDepTime Column
+
+
+```{r}
+df_only_delays$CRSDepTime <- as.character(df_only_delays$CRSDepTime)
+df_only_delays$CRSDepTime <- sprintf("%04s", df_only_delays$CRSDepTime)
+```
+
+
+
+Extracting Hour of the day
+
+
+```{r}
+hours <- substr(df_only_delays$CRSDepTime, nchar(df_only_delays$CRSDepTime) - 3, nchar(df_only_delays$CRSDepTime) - 2)
+hours <- as.numeric(hours)
+df_only_delays$Hours <- hours
+df_only_delays$CRSDepTime <- as.numeric(df_only_delays$CRSDepTime)
+
+```
+
+
+Find unique values in the column
+
+```{r}
+unique_values <- unique(df_only_delays$Hours)
+unique_values <- unique(hours)
+print(unique_values)
+```
+
+Formatting inorder to draw bar-plot
+
+
+```{r}
+df_only_delays_long <- melt(df_only_delays, id.vars = "Hours", variable.name = "variable", value.name = "value")
+df_only_delays_wide <- dcast(df_only_delays_long, Hours ~ variable, value.var = "value", fun.aggregate = mean)
+df_only_delays_wide <- round(df_only_delays_wide, 0)
+```
+
+Creating plot
+
+
+```{r}
+df_only_delays_wide$Hours <- factor(df_only_delays_wide$Hours, levels = c(0:23),
+                                    labels = c("0am-1am", "1am-2am", "2am-3am", "3am-4am", "4am-5am", "5am-6am", "6am-7am", "7am-8am",
+                                               "8am-9am", "9am-10am", "10am-11am", "11am-12pm", "12pm-1pm", "1pm-2pm", "2pm-3pm",
+                                               "3pm-4pm", "4pm-5pm", "5pm-6pm", "6pm-7pm", "7pm-8pm", "8pm-9pm", "9pm-10pm",
+                                               "10pm-11pm", "11pm-12am"))
+
+
+barchart <- ggplot(df_only_delays_wide, aes(x = Hours, y = Total_Delays)) +
+            geom_bar(stat = "identity", fill = "steelblue4",width = 0.8) +
+            labs(title = "Average Delay Distribution by Hour of the Day",
+                 x = "Time of day",
+                 y = "Average Delay (min)") +
+            theme(axis.text.x = element_text(angle = 43, hjust = 1))
+            
+
+            
+options(repr.plot.width = 20, repr.plot.height = 7.4)
+
+
+
+```
+
+Printing the barchart
+
+
+```{r}
+print(barchart)
+```
+
+Formatting for boxplot for average delays by day of the week
+
+
+```{r}
+
+
+df_only_delays$DayOfWeek <- factor(df_only_delays$DayOfWeek, levels = c(1:7),
+                                    labels = c("MON", "TUE", "WED", "THUR", "FRI", "SAT", "SUN"))
+                                               
+box_plot<-ggplot(df_only_delays, aes(x = DayOfWeek, y = Total_Delays, fill = DayOfWeek)) + ylim(c(0,100)) +
+  geom_boxplot(outlier.colour="black", outlier.shape=NA, outlier.size=0) + stat_summary(fun = "mean", geom = "point", shape = 8, size = 2, color = "white")+
+  labs(x = "Day of Week", y = "Total Delays")
+
+```
+
+Output boxplot
+
+
+```{r}
+print(box_plot) 
+```
+
+
+
+
