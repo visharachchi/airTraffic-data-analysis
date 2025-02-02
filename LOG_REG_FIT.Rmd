@@ -1,0 +1,248 @@
+---
+title: "Logistic regression model fit"
+author: 'Vishma Arachchi'
+date: "2024-04-02"'
+purpose: "FITTING A LOGISTIC REGRESSION FOR THE PROBABILITY OF DIVERTED US FLIGHTS"
+output: html_document
+---
+
+
+
+IMPORTING LIBRARIES
+
+```{r}
+library(dplyr)
+library(caret)
+library(glmnet)
+library(ROSE)
+library(pROC)
+library(tibble)
+
+
+```
+
+
+LOADING THE DATASETS
+
+
+```{r}
+df_a <- read.csv('/Users/vishmaarachchi/Documents/BSC/Programming coursework - PROJECT/2006.csv.bz2')
+plane_df <- read.csv('/Users/vishmaarachchi/Documents/BSC/Programming coursework - PROJECT/plane-data.csv')
+airport_df <- read.csv('/Users/vishmaarachchi/Documents/BSC/Programming coursework - PROJECT/airports.csv')
+
+```
+
+
+Replacing empty strings with NA
+
+
+```{r} 
+
+df_a[df_a == ""] <- NA
+plane_df[plane_df == ""] <- NA
+airport_df[airport_df == ""] <- NA
+
+```
+
+
+Creating dataframe with columns of interest
+
+
+```{r}
+df_main <- select(df_a, DayOfWeek, CRSDepTime,CRSArrTime, Distance, Month, UniqueCarrier, Diverted, Dest, Origin  )
+
+```
+
+
+Renaming the columns in airport dataset and merging
+
+
+```{r}
+
+colnames(airport_df)[colnames(airport_df) == "iata"] <- "Dest"
+merged_df_1 <- left_join(df_main, airport_df, by = 'Dest')
+colnames(merged_df_1)[colnames(merged_df_1) == "lat"] <- "Destination_latitude"
+colnames(merged_df_1)[colnames(merged_df_1) == "long"] <- "Destination_longitude"
+merged_df_1 <- select(merged_df_1, -c(airport, city, state, country))
+colnames(airport_df)[colnames(airport_df) == "Dest"] <- "Origin"
+merged_df_2 <- left_join(merged_df_1, airport_df, by = 'Origin')
+colnames(merged_df_2)[colnames(merged_df_2) == "lat"] <- "Origin_latitude"
+colnames(merged_df_2)[colnames(merged_df_2) == "long"] <- "Origin_longitude"
+merged_df_2 <- select(merged_df_2, -c(airport, city, state, country, Dest, Origin ))
+
+```
+
+
+Converting to type factor
+
+
+```{r}
+
+
+month_names <- c('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
+merged_df_2$Month <- month_names[merged_df_2$Month]
+merged_df_2$Month <- as.factor(merged_df_2$Month)
+
+day_names <- c('Mon', 'Tue', 'Wed', 'Thur', 'Fri', 'Sat', 'Sun')
+merged_df_2$DayOfWeek <- day_names[merged_df_2$DayOfWeek]
+merged_df_2$DayOfWeek <- as.factor(merged_df_2$DayOfWeek)
+
+merged_df_2$UniqueCarrier <- as.factor(merged_df_2$UniqueCarrier)
+merged_df_2$Diverted <- as.factor(merged_df_2$Diverted)
+
+```
+
+Displaying class imbalance 
+
+
+```{r}
+
+summary(merged_df_2$Diverted)
+
+```
+
+Create a train-test split
+
+
+```{r}
+set.seed(123)  
+train_index <- createDataPartition(merged_df_2$Diverted, p = 0.7, list = FALSE)
+train_data <- merged_df_2[train_index, ]
+test_data <- merged_df_2[-train_index, ]
+
+```
+
+Rectifying class imbalance
+
+```{r}
+
+undersampled_data <- downSample(train_data, train_data$Diverted  )
+undersampled_data_2 <- select(undersampled_data, -Class)
+
+```
+
+
+Applying standard scaling
+
+```{r}
+train_features <- subset(undersampled_data_2, select = -Diverted)
+train_target <- undersampled_data_2$Diverted
+
+test_features <- subset(test_data, select = -Diverted)
+test_target <- test_data$Diverted
+
+```
+
+Scaling the predictor variables (features) using the mean and standard deviation of the training data
+
+
+```{r}
+
+numerical_features_train <- subset(train_features, select = c('CRSDepTime', 'CRSArrTime', 'Distance','Destination_latitude','Destination_longitude', 'Origin_latitude','Origin_longitude'))
+categorical_features_train <- subset(train_features, select = c("DayOfWeek", "Month", "UniqueCarrier"))
+
+
+numerical_features_test <- subset(test_features, select = c('CRSDepTime', 'CRSArrTime', 'Distance','Destination_latitude','Destination_longitude'
+                                                              ,'Origin_latitude','Origin_longitude'))
+
+categorical_features_test <- subset(test_features, select = c("DayOfWeek", "Month", "UniqueCarrier"))
+
+scaled_train_features <- scale(numerical_features_train)
+scaled_train_features_df <- as.data.frame(scaled_train_features)
+scaled_test_features <- scale(numerical_features_test, center = attr(scaled_train_features, "scaled:center"), scale = attr(scaled_train_features, "scaled:scale"))
+scaled_test_features_df <- as.data.frame(scaled_test_features)
+
+
+```
+
+Applying encoding for categorical features
+
+```{r}
+categorical_encoded_data_train_model <- dummyVars("~.", data = categorical_features_train)  
+categorical_encoded_data_train <- predict(categorical_encoded_data_train_model, newdata = categorical_features_train)
+categorical_encoded_data_train_df <- as.data.frame(categorical_encoded_data_train)
+
+
+categorical_encoded_data_test <- predict(categorical_encoded_data_train_model, newdata = categorical_features_test)
+categorical_encoded_data_test_df <- as.data.frame(categorical_encoded_data_test)
+
+
+```
+
+
+Combining scaled features with categorical features and target variable for both train and test
+
+
+```{r}
+scaled_data_train <- cbind(scaled_train_features_df, categorical_encoded_data_train_df, train_target)
+scaled_data_test <- cbind(scaled_test_features_df, categorical_encoded_data_test_df, test_target)
+
+
+```
+
+Renaming target to Diverted
+
+```{r}
+colnames(scaled_data_train)[colnames(scaled_data_train) == "train_target"] <- "Diverted"
+colnames(scaled_data_test)[colnames(scaled_data_test) == "test_target"] <- "Diverted"
+
+
+```
+
+
+```{r}
+summary(scaled_data_train$Diverted)
+
+
+```
+
+
+Fitting the model
+
+
+```{r}
+
+logistic_model <- glm(Diverted ~ ., data = scaled_data_train, family = binomial)
+
+predicted_probabilities <- predict(logistic_model, newdata = scaled_data_test, type = 'response')
+predicted_classes <- ifelse(predicted_probabilities > 0.5, 1, 0)
+predicted_df <- data.frame(test_data, Predicted_Probability = predicted_probabilities, Predicted_Class = predicted_classes)
+
+
+```
+
+
+Drawing the roc curve
+
+```{r}
+roc_data <- roc(test_data$Diverted, predicted_probabilities) 
+plot(roc_data, main = "ROC Curve for Logistic Regression", col = "blue")
+
+legend("bottomright", legend = c("Logistic Regression"), col = c("blue"), lty = c(1, 2))
+
+
+```
+
+CONFUSION MATRIX
+
+```{r}
+conf_matrix <- confusionMatrix(data = factor(predicted_df$Predicted_Class), reference = factor(test_data$Diverted))
+print(conf_matrix)
+```
+
+Visualizing the Coeffitients
+```{r}
+coefficients <- coef(logistic_model)
+coefficient_df <- data.frame(coefficients)
+coefficient_df$coefficients <- replace(coefficient_df$coefficients, is.na(coefficient_df$coefficients), 0)
+coefficient_df <- rownames_to_column(coefficient_df, var = "IndexColumn")
+
+ggplot(coefficient_df, aes(x = IndexColumn, y = coefficients)) +
+  geom_bar(stat = "identity", fill = ifelse(coefficient_df$coefficients > 0, "blue", "red")) +
+  labs(title = "Coefficients Visualization", x = "Features", y = "Coefficient Value") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  
+
+```
+
+
