@@ -7,7 +7,7 @@ The scripts and analysis aim to accomplish 3 seperate research aims:
 
 1. Explore the times and days of the week where flight delays are minimum.
 2. Explore the possibility and nature of the relatioinship between the age of a plane and the delay times it experiences.
-3. Fitting a logistgic regression model, to the data set to predict if the flight was diverted or not.
+3. Fitting a logistic regression model, to the data set to predict if the flight was diverted or not.
 
 Findings are presented in a detailed report.
 
